@@ -93,12 +93,21 @@ class Lead extends Model
     public function scopeSearch($query, ?string $q)
     {
         if (!$q) return $query;
-        return $query->where(function ($sub) use ($q) {
-            $sub->where('nama', 'like', "%{$q}%")
-                ->orWhere('perusahaan', 'like', "%{$q}%")
-                ->orWhere('kebutuhan', 'like', "%{$q}%")
-                ->orWhere('sumber', 'like', "%{$q}%")
-                ->orWhere('pic', 'like', "%{$q}%");
+
+        $like = $query->getConnection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
+
+        return $query->where(function ($sub) use ($q, $like) {
+            $sub->where('nama', $like, "%{$q}%")
+                ->orWhere('kode_lead', $like, "%{$q}%")
+                ->orWhere('perusahaan', $like, "%{$q}%")
+                ->orWhere('kebutuhan', $like, "%{$q}%")
+                ->orWhere('sumber', $like, "%{$q}%")
+                ->orWhere('phone', $like, "%{$q}%")
+                ->orWhere('email', $like, "%{$q}%")
+                ->orWhere('lokasi', $like, "%{$q}%")
+                ->orWhereHas('picUser', function ($userQuery) use ($q, $like) {
+                    $userQuery->where('name', $like, "%{$q}%");
+                });
         });
     }
 
