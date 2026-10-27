@@ -133,6 +133,8 @@ class ProyekController extends Controller
         $proyek = new Proyek($validated);
         $proyek->kode       = $proyek->generateKode();
         $proyek->status     = 'Belum Dimulai';
+        $proyek->nilai      = $validated['nilai'] ?? 0;  // ensure NOT NULL on PostgreSQL
+        $proyek->progress   = $validated['progress'] ?? 0;
         $proyek->created_by = $request->user()?->id;
         $proyek->save();
 
