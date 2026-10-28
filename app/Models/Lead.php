@@ -29,13 +29,35 @@ class Lead extends Model
         'tipe_proyek',
         'skala',
         'intensitas',
+        'tipe_kontrak',
+        'sewa_durasi_bulan',
+        'skema_pembayaran',
+        'sewa_mulai',
+        'sewa_selesai',
+        'nominal_per_bulan',
+        'akses_tipe',
+        'allowed_roles',
+        'assigned_users',
         'created_by',
     ];
 
     protected $casts = [
-        'tanggal'  => 'date:Y-m-d',
-        'estimasi' => 'integer',
+        'tanggal'           => 'date:Y-m-d',
+        'estimasi'          => 'integer',
+        'sewa_durasi_bulan' => 'integer',
+        'nominal_per_bulan' => 'integer',
+        'sewa_mulai'        => 'date:Y-m-d',
+        'sewa_selesai'      => 'date:Y-m-d',
+        'allowed_roles'     => 'array',
+        'assigned_users'    => 'array',
     ];
+
+    // ── Akses constants ───────────────────────────────────────────────────────
+    const VALID_AKSES_TIPE = ['personal', 'role', 'semua'];
+
+    // ── Kontrak constants ─────────────────────────────────────────────────────
+    const VALID_TIPE_KONTRAK = ['Langsung', 'Sewa'];
+    const VALID_SKEMA_PEMBAYARAN = ['Bulanan', 'Sekaligus'];
 
     // ── Status constants ──────────────────────────────────────────────────────
     const STATUS_PROSPEK   = 'Prospek';
@@ -115,5 +137,76 @@ class Lead extends Model
     {
         if (!$status || $status === 'semua') return $query;
         return $query->where('status', $status);
+    }
+
+    public function scopeByTipeKontrak($query, ?string $tipe)
+    {
+        if (!$tipe || $tipe === 'semua') return $query;
+        return $query->where('tipe_kontrak', $tipe);
+    }
+
+    public function scopeAccessibleBy($query, ?User $user)
+    {
+        if (!$user) return $query;
+
+        // Super Admin and Admin bypass all restrictions
+        if ($user->role && in_array($user->role->slug, ['super-admin', 'admin'])) {
+            return $query;
+        }
+
+        $userId = $user->id;
+        $roleId = $user->role_id;
+        $roleSlug = $user->role?->slug;
+
+        return $query->where(function ($q) use ($userId, $roleId, $roleSlug) {
+            $q->where('akses_tipe', 'semua')
+              ->orWhereNull('akses_tipe')
+              ->orWhere('pic_id', $userId)
+              ->orWhere('created_by', $userId)
+              ->orWhereJsonContains('assigned_users', (int) $userId)
+              ->orWhereJsonContains('assigned_users', (string) $userId);
+
+            if ($roleId || $roleSlug) {
+                $q->orWhere(function ($roleQ) use ($roleId, $roleSlug) {
+                    $roleQ->where('akses_tipe', 'role')
+                          ->where(function ($sub) use ($roleId, $roleSlug) {
+                              if ($roleId) {
+                                  $sub->whereJsonContains('allowed_roles', (int) $roleId)
+                                      ->orWhereJsonContains('allowed_roles', (string) $roleId);
+                              }
+                              if ($roleSlug) {
+                                  $sub->orWhereJsonContains('allowed_roles', $roleSlug);
+                              }
+                          });
+                });
+            }
+        });
+    }
+
+    public function isAccessibleBy(?User $user): bool
+    {
+        if (!$user) return false;
+        if ($user->role && in_array($user->role->slug, ['super-admin', 'admin'])) {
+            return true;
+        }
+        if ($this->akses_tipe === 'semua' || empty($this->akses_tipe)) {
+            return true;
+        }
+        if ($this->pic_id === $user->id || $this->created_by === $user->id) {
+            return true;
+        }
+        if (!empty($this->assigned_users)) {
+            $assigned = (array) $this->assigned_users;
+            if (in_array($user->id, $assigned) || in_array((string)$user->id, $assigned)) {
+                return true;
+            }
+        }
+        if ($this->akses_tipe === 'role' && !empty($this->allowed_roles)) {
+            $allowed = (array) $this->allowed_roles;
+            if (in_array($user->role_id, $allowed) || in_array((string)$user->role_id, $allowed) || ($user->role && in_array($user->role->slug, $allowed))) {
+                return true;
+            }
+        }
+        return false;
     }
 }

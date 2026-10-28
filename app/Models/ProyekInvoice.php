@@ -36,7 +36,7 @@ class ProyekInvoice extends Model
     ];
 
     const VALID_STATUSES = ['Draft', 'Terkirim', 'Lunas', 'Jatuh Tempo'];
-    const VALID_TIPE     = ['DP', 'Termin', 'Pelunasan', 'Lainnya'];
+    const VALID_TIPE     = ['DP', 'Termin', 'Pelunasan', 'Sewa', 'Sewa Bulanan', 'Lainnya'];
 
     public function proyek(): BelongsTo
     {

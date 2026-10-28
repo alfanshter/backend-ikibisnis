@@ -76,6 +76,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('proyeks', \App\Http\Controllers\Api\ProyekController::class);
 
     Route::prefix('proyeks/{proyek}')->group(function () {
+        // Sewa
+        Route::post('/perpanjang-sewa',        [\App\Http\Controllers\Api\ProyekController::class, 'perpanjangSewa']);
+        Route::post('/generate-sewa-invoices', [\App\Http\Controllers\Api\ProyekController::class, 'generateSewaInvoices']);
+
         // Tim
         Route::get('/tim',          [\App\Http\Controllers\Api\ProyekTimController::class, 'index']);
         Route::post('/tim',         [\App\Http\Controllers\Api\ProyekTimController::class, 'store']);

@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('perihal')->nullable();
             $table->text('catatan')->nullable();
             $table->unsignedTinyInteger('ppn')->default(11); // percent
-            $table->enum('tipe', ['DP', 'Termin', 'Pelunasan', 'Lainnya'])->default('Lainnya');
+            $table->enum('tipe', ['DP', 'Termin', 'Pelunasan', 'Sewa', 'Sewa Bulanan', 'Lainnya'])->default('Lainnya');
             $table->unsignedTinyInteger('nomor_termin')->nullable();
             $table->enum('status', ['Draft', 'Terkirim', 'Lunas', 'Jatuh Tempo'])->default('Draft');
             $table->bigInteger('subtotal')->default(0);

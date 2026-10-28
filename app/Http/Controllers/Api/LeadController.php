@@ -29,13 +29,22 @@ class LeadController extends Controller
             'email'       => $lead->email,
             'lokasi'      => $lead->lokasi,
             'catatan'     => $lead->catatan,
-            'tipe_proyek' => $lead->tipe_proyek,
-            'skala'       => $lead->skala,
-            'intensitas'  => $lead->intensitas,
-            'created_by'  => $lead->created_by,
-            'created_at'  => $lead->created_at?->format('Y-m-d H:i:s'),
-            'updated_at'  => $lead->updated_at?->format('Y-m-d H:i:s'),
-            'surveis_count' => $lead->surveis_count ?? 0,
+            'tipe_proyek'       => $lead->tipe_proyek,
+            'skala'             => $lead->skala,
+            'intensitas'        => $lead->intensitas,
+            'tipe_kontrak'      => $lead->tipe_kontrak ?? 'Langsung',
+            'sewa_durasi_bulan' => $lead->sewa_durasi_bulan ?? 12,
+            'skema_pembayaran'  => $lead->skema_pembayaran ?? 'Bulanan',
+            'sewa_mulai'        => $lead->sewa_mulai?->format('Y-m-d'),
+            'sewa_selesai'      => $lead->sewa_selesai?->format('Y-m-d'),
+            'nominal_per_bulan' => $lead->nominal_per_bulan,
+            'akses_tipe'        => $lead->akses_tipe ?? 'semua',
+            'allowed_roles'     => $lead->allowed_roles ?? [],
+            'assigned_users'    => $lead->assigned_users ?? [],
+            'created_by'        => $lead->created_by,
+            'created_at'        => $lead->created_at?->format('Y-m-d H:i:s'),
+            'updated_at'        => $lead->updated_at?->format('Y-m-d H:i:s'),
+            'surveis_count'     => $lead->surveis_count ?? 0,
             'proyek'      => $lead->relationLoaded('proyek') && $lead->proyek ? [
                 'id'   => $lead->proyek->id,
                 'nama' => $lead->proyek->nama,
@@ -53,8 +62,10 @@ class LeadController extends Controller
         $query = Lead::query()
             ->with(['picUser'])
             ->withCount('surveis')
+            ->accessibleBy($request->user())
             ->search($request->input('search'))
-            ->byStatus($request->input('status'));
+            ->byStatus($request->input('status'))
+            ->byTipeKontrak($request->input('tipe_kontrak'));
 
         $leads = $query->orderBy('tanggal', 'desc')
                        ->orderBy('id', 'desc')
@@ -76,10 +87,11 @@ class LeadController extends Controller
     /**
      * GET /api/leads/stats
      */
-    public function stats(): JsonResponse
+    public function stats(Request $request): JsonResponse
     {
+        $base     = Lead::query()->accessibleBy($request->user());
         $statuses = Lead::VALID_STATUSES;
-        $counts   = Lead::selectRaw('status, count(*) as count')
+        $counts   = (clone $base)->selectRaw('status, count(*) as count')
                         ->groupBy('status')
                         ->pluck('count', 'status')
                         ->toArray();
@@ -89,13 +101,13 @@ class LeadController extends Controller
             'count'  => $counts[$s] ?? 0,
         ], $statuses);
 
-        $totalEstimasi = Lead::whereIn('status', ['Penawaran', 'Deal'])
+        $totalEstimasi = (clone $base)->whereIn('status', ['Penawaran', 'Deal'])
                              ->whereNotNull('estimasi')
                              ->sum('estimasi');
 
         return response()->json([
             'by_status'       => $data,
-            'total'           => Lead::count(),
+            'total'           => (clone $base)->count(),
             'total_estimasi'  => $totalEstimasi,
         ]);
     }
@@ -108,22 +120,43 @@ class LeadController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'tanggal'     => 'required|date',
-            'nama'        => 'required|string|max:255',
-            'perusahaan'  => 'required|string|max:255',
-            'pic_id'      => 'nullable|exists:users,id',
-            'kebutuhan'   => 'nullable|string',
-            'sumber'      => 'required|in:' . implode(',', Lead::VALID_SUMBER),
-            'estimasi'    => 'nullable|numeric|min:0',
-            'status'      => 'required|in:' . implode(',', Lead::VALID_STATUSES),
-            'phone'       => 'nullable|string|max:30',
-            'email'       => 'nullable|email|max:255',
-            'lokasi'      => 'nullable|string|max:255',
-            'catatan'     => 'nullable|string',
-            'tipe_proyek' => 'nullable|string|max:100',
-            'skala'       => 'nullable|string|max:100',
-            'intensitas'  => 'nullable|string|max:100',
+            'tanggal'           => 'required|date',
+            'nama'              => 'required|string|max:255',
+            'perusahaan'        => 'required|string|max:255',
+            'pic_id'            => 'nullable|exists:users,id',
+            'akses_tipe'        => 'nullable|in:' . implode(',', Lead::VALID_AKSES_TIPE),
+            'allowed_roles'     => 'nullable|array',
+            'assigned_users'    => 'nullable|array',
+            'kebutuhan'         => 'nullable|string',
+            'sumber'            => 'required|in:' . implode(',', Lead::VALID_SUMBER),
+            'estimasi'          => 'nullable|numeric|min:0',
+            'status'            => 'required|in:' . implode(',', Lead::VALID_STATUSES),
+            'phone'             => 'nullable|string|max:30',
+            'email'             => 'nullable|email|max:255',
+            'lokasi'            => 'nullable|string|max:255',
+            'catatan'           => 'nullable|string',
+            'tipe_proyek'       => 'nullable|string|max:100',
+            'skala'             => 'nullable|string|max:100',
+            'intensitas'        => 'nullable|string|max:100',
+            'tipe_kontrak'      => 'nullable|in:' . implode(',', Lead::VALID_TIPE_KONTRAK),
+            'sewa_durasi_bulan' => 'nullable|integer|min:1',
+            'skema_pembayaran'  => 'nullable|in:' . implode(',', Lead::VALID_SKEMA_PEMBAYARAN),
+            'sewa_mulai'        => 'nullable|date',
+            'sewa_selesai'      => 'nullable|date',
+            'nominal_per_bulan' => 'nullable|integer|min:0',
         ]);
+
+        $tipeKontrak = $validated['tipe_kontrak'] ?? 'Langsung';
+        if ($tipeKontrak === 'Sewa') {
+            $durasi   = $validated['sewa_durasi_bulan'] ?? 12;
+            $estimasi = $validated['estimasi'] ?? 0;
+            if (empty($validated['nominal_per_bulan']) && $durasi > 0 && $estimasi > 0) {
+                $validated['nominal_per_bulan'] = (int) round($estimasi / $durasi);
+            }
+            if (empty($validated['skema_pembayaran'])) {
+                $validated['skema_pembayaran'] = 'Bulanan';
+            }
+        }
 
         $validated['kode_lead'] = \App\Services\DocumentNumberingService::generateNumber('crm');
 
@@ -143,8 +176,12 @@ class LeadController extends Controller
     /**
      * GET /api/leads/{lead}
      */
-    public function show(Lead $lead): JsonResponse
+    public function show(Request $request, Lead $lead): JsonResponse
     {
+        if (!$lead->isAccessibleBy($request->user())) {
+            return response()->json(['message' => 'Anda tidak memiliki hak akses ke lead ini.'], 403);
+        }
+
         $lead->load(['activities', 'surveis', 'picUser', 'penawarans', 'proyek']);
 
         return response()->json([
@@ -184,23 +221,48 @@ class LeadController extends Controller
      */
     public function update(Request $request, Lead $lead): JsonResponse
     {
+        if (!$lead->isAccessibleBy($request->user())) {
+            return response()->json(['message' => 'Anda tidak memiliki hak akses untuk mengubah lead ini.'], 403);
+        }
+
         $validated = $request->validate([
-            'tanggal'     => 'sometimes|date',
-            'nama'        => 'sometimes|string|max:255',
-            'perusahaan'  => 'sometimes|string|max:255',
-            'pic_id'      => 'nullable|exists:users,id',
-            'kebutuhan'   => 'nullable|string',
-            'sumber'      => 'sometimes|in:' . implode(',', Lead::VALID_SUMBER),
-            'estimasi'    => 'nullable|numeric|min:0',
-            'status'      => 'sometimes|in:' . implode(',', Lead::VALID_STATUSES),
-            'phone'       => 'nullable|string|max:30',
-            'email'       => 'nullable|email|max:255',
-            'lokasi'      => 'nullable|string|max:255',
-            'catatan'     => 'nullable|string',
-            'tipe_proyek' => 'nullable|string|max:100',
-            'skala'       => 'nullable|string|max:100',
-            'intensitas'  => 'nullable|string|max:100',
+            'tanggal'           => 'sometimes|date',
+            'nama'              => 'sometimes|string|max:255',
+            'perusahaan'        => 'sometimes|string|max:255',
+            'pic_id'            => 'nullable|exists:users,id',
+            'akses_tipe'        => 'nullable|in:' . implode(',', Lead::VALID_AKSES_TIPE),
+            'allowed_roles'     => 'nullable|array',
+            'assigned_users'    => 'nullable|array',
+            'kebutuhan'         => 'nullable|string',
+            'sumber'            => 'sometimes|in:' . implode(',', Lead::VALID_SUMBER),
+            'estimasi'          => 'nullable|numeric|min:0',
+            'status'            => 'sometimes|in:' . implode(',', Lead::VALID_STATUSES),
+            'phone'             => 'nullable|string|max:30',
+            'email'             => 'nullable|email|max:255',
+            'lokasi'            => 'nullable|string|max:255',
+            'catatan'           => 'nullable|string',
+            'tipe_proyek'       => 'nullable|string|max:100',
+            'skala'             => 'nullable|string|max:100',
+            'intensitas'        => 'nullable|string|max:100',
+            'tipe_kontrak'      => 'nullable|in:' . implode(',', Lead::VALID_TIPE_KONTRAK),
+            'sewa_durasi_bulan' => 'nullable|integer|min:1',
+            'skema_pembayaran'  => 'nullable|in:' . implode(',', Lead::VALID_SKEMA_PEMBAYARAN),
+            'sewa_mulai'        => 'nullable|date',
+            'sewa_selesai'      => 'nullable|date',
+            'nominal_per_bulan' => 'nullable|integer|min:0',
         ]);
+
+        $tipeKontrak = $validated['tipe_kontrak'] ?? $lead->tipe_kontrak ?? 'Langsung';
+        if ($tipeKontrak === 'Sewa') {
+            $durasi   = $validated['sewa_durasi_bulan'] ?? $lead->sewa_durasi_bulan ?? 12;
+            $estimasi = array_key_exists('estimasi', $validated) ? $validated['estimasi'] : $lead->estimasi;
+            if (empty($validated['nominal_per_bulan']) && $durasi > 0 && $estimasi > 0) {
+                $validated['nominal_per_bulan'] = (int) round($estimasi / $durasi);
+            }
+            if (empty($validated['skema_pembayaran']) && empty($lead->skema_pembayaran)) {
+                $validated['skema_pembayaran'] = 'Bulanan';
+            }
+        }
 
         $lead->update($validated);
 
@@ -217,6 +279,10 @@ class LeadController extends Controller
      */
     public function updateStatus(Request $request, Lead $lead): JsonResponse
     {
+        if (!$lead->isAccessibleBy($request->user())) {
+            return response()->json(['message' => 'Anda tidak memiliki hak akses untuk mengubah lead ini.'], 403);
+        }
+
         $validated = $request->validate([
             'status' => 'required|in:' . implode(',', Lead::VALID_STATUSES),
         ]);
@@ -234,8 +300,12 @@ class LeadController extends Controller
     /**
      * DELETE /api/leads/{lead}
      */
-    public function destroy(Lead $lead): JsonResponse
+    public function destroy(Request $request, Lead $lead): JsonResponse
     {
+        if (!$lead->isAccessibleBy($request->user())) {
+            return response()->json(['message' => 'Anda tidak memiliki hak akses untuk menghapus lead ini.'], 403);
+        }
+
         $lead->delete();
 
         return response()->json(['message' => 'Lead berhasil dihapus']);
