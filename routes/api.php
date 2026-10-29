@@ -76,6 +76,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('proyeks', \App\Http\Controllers\Api\ProyekController::class);
 
     Route::prefix('proyeks/{proyek}')->group(function () {
+        // Pembayaran Langsung & Status
+        Route::post('/bayar-langsung',         [\App\Http\Controllers\Api\ProyekController::class, 'bayarLangsung']);
+        Route::patch('/status-pembayaran',     [\App\Http\Controllers\Api\ProyekController::class, 'updateStatusPembayaran']);
+
         // Sewa
         Route::post('/perpanjang-sewa',        [\App\Http\Controllers\Api\ProyekController::class, 'perpanjangSewa']);
         Route::post('/generate-sewa-invoices', [\App\Http\Controllers\Api\ProyekController::class, 'generateSewaInvoices']);
@@ -102,7 +106,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/invoices/{invoice}',          [\App\Http\Controllers\Api\ProyekInvoiceController::class, 'show']);
         Route::put('/invoices/{invoice}',          [\App\Http\Controllers\Api\ProyekInvoiceController::class, 'update']);
         Route::patch('/invoices/{invoice}/status', [\App\Http\Controllers\Api\ProyekInvoiceController::class, 'updateStatus']);
+        Route::post('/invoices/{invoice}/bayar',   [\App\Http\Controllers\Api\ProyekInvoiceController::class, 'bayar']);
         Route::delete('/invoices/{invoice}',       [\App\Http\Controllers\Api\ProyekInvoiceController::class, 'destroy']);
+
+        // Pembayaran & Jadwal Sewa
+        Route::get('/pembayarans',                 [\App\Http\Controllers\Api\ProyekPembayaranController::class, 'index']);
+        Route::post('/pembayarans',                [\App\Http\Controllers\Api\ProyekPembayaranController::class, 'store']);
+        Route::put('/pembayarans/{pembayaran}',    [\App\Http\Controllers\Api\ProyekPembayaranController::class, 'update']);
+        Route::delete('/pembayarans/{pembayaran}', [\App\Http\Controllers\Api\ProyekPembayaranController::class, 'destroy']);
+        Route::get('/sewa-jadwal',                 [\App\Http\Controllers\Api\ProyekPembayaranController::class, 'sewaJadwal']);
 
         // Fee Tim
         Route::get('/fee-tim',                [\App\Http\Controllers\Api\ProyekFeeTimController::class, 'index']);

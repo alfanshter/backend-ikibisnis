@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Proyek;
+use App\Models\Transaction;
+use App\Services\DocumentNumberingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -13,6 +15,19 @@ class ProyekController extends Controller
 
     private function formatProyek(Proyek $p, bool $withRelations = false): array
     {
+        $totalDibayar = isset($p->total_dibayar)
+            ? (int) $p->total_dibayar
+            : ($p->relationLoaded('pembayarans') ? (int) $p->pembayarans->sum('nominal') : (int) $p->pembayarans()->sum('nominal'));
+        $nilai = (int) ($p->nilai ?? 0);
+        $sisaPembayaran = max(0, $nilai - $totalDibayar);
+
+        $statusPembayaran = $p->status_pembayaran ?? 'Belum Dibayar';
+        if ($totalDibayar >= $nilai && $nilai > 0) {
+            $statusPembayaran = 'Lunas';
+        } elseif ($totalDibayar > 0 && $statusPembayaran !== 'Lunas') {
+            $statusPembayaran = 'Sebagian';
+        }
+
         $data = [
             'id'            => $p->id,
             'kode'          => $p->kode,
@@ -25,6 +40,11 @@ class ProyekController extends Controller
             'kategori'      => $p->kategori,
             'divisi'        => $p->divisi,
             'tipe_kontrak'  => $p->tipe_kontrak ?? 'Reguler',
+            'status_pembayaran' => $statusPembayaran,
+            'total_dibayar' => $totalDibayar,
+            'total_dibayar_format' => 'Rp' . number_format($totalDibayar, 0, ',', '.'),
+            'sisa_pembayaran' => $sisaPembayaran,
+            'sisa_pembayaran_format' => 'Rp' . number_format($sisaPembayaran, 0, ',', '.'),
             'sewa_mulai'    => $p->sewa_mulai?->format('Y-m-d'),
             'sewa_selesai'  => $p->sewa_selesai?->format('Y-m-d'),
             'sewa_durasi_bulan' => $p->sewa_durasi_bulan,
@@ -77,6 +97,23 @@ class ProyekController extends Controller
                 'created_by'           => $r->createdBy?->name,
                 'created_at'           => $r->created_at?->format('Y-m-d H:i:s'),
             ])->values();
+
+            $data['pembayarans'] = $p->pembayarans->map(fn($pmt) => [
+                'id'                => $pmt->id,
+                'proyek_id'         => $pmt->proyek_id,
+                'proyek_invoice_id' => $pmt->proyek_invoice_id,
+                'transaction_id'    => $pmt->transaction_id,
+                'nomor_pembayaran'  => $pmt->nomor_pembayaran,
+                'tanggal_bayar'     => $pmt->tanggal_bayar?->format('Y-m-d'),
+                'nominal'           => $pmt->nominal,
+                'nominal_format'    => 'Rp' . number_format($pmt->nominal, 0, ',', '.'),
+                'metode_pembayaran' => $pmt->metode_pembayaran,
+                'catatan'           => $pmt->catatan,
+                'bukti_bayar'       => $pmt->bukti_bayar,
+                'masuk_pembukuan'   => (bool) $pmt->masuk_pembukuan,
+                'created_by'        => $pmt->createdBy?->name ?? 'System',
+                'created_at'        => $pmt->created_at?->format('Y-m-d H:i:s'),
+            ])->values();
         }
 
         return $data;
@@ -91,6 +128,7 @@ class ProyekController extends Controller
     {
         $query = Proyek::query()
             ->with(['picUser'])
+            ->withSum('pembayarans as total_dibayar', 'nominal')
             ->accessibleBy($request->user())
             ->search($request->input('search'))
             ->byStatus($request->input('status'))
@@ -261,7 +299,7 @@ class ProyekController extends Controller
             return response()->json(['message' => 'Anda tidak memiliki hak akses ke proyek ini.'], 403);
         }
 
-        $proyek->load(['picUser', 'tim.user', 'penawaran', 'perpanjanganSewas.createdBy']);
+        $proyek->load(['picUser', 'tim.user', 'penawaran', 'perpanjanganSewas.createdBy', 'pembayarans.transaction', 'pembayarans.createdBy', 'pembayarans.invoice']);
 
         return response()->json([
             'data' => $this->formatProyek($proyek, true),
@@ -577,6 +615,122 @@ class ProyekController extends Controller
         return response()->json([
             'message' => 'Progress berhasil diperbarui',
             'data'    => $this->formatProyek($proyek->fresh()),
+        ]);
+    }
+
+    // ── Bayar Langsung (Proyek Langsung -> Pembukuan) ──────────────────────────
+
+    /**
+     * POST /api/proyeks/{proyek}/bayar-langsung
+     * Tandai pembayaran proyek langsung dan otomatis sinkron ke Pembukuan (transactions)
+     */
+    public function bayarLangsung(Request $request, Proyek $proyek): JsonResponse
+    {
+        abort_unless($proyek->isAccessibleBy($request->user()), 403, 'Akses ditolak');
+
+        $validated = $request->validate([
+            'nominal'           => 'nullable|integer|min:0',
+            'tanggal_bayar'     => 'nullable|date',
+            'metode_pembayaran' => 'nullable|string|max:100',
+            'catatan'           => 'nullable|string',
+            'masuk_pembukuan'   => 'nullable|boolean',
+            'status_pembayaran' => 'nullable|in:Lunas,Sebagian,Belum Dibayar',
+        ]);
+
+        $sudahDibayar = (int) $proyek->pembayarans()->sum('nominal');
+        $nilai = (int) ($proyek->nilai ?? 0);
+        $sisa = max(0, $nilai - $sudahDibayar);
+
+        $nominal = array_key_exists('nominal', $validated) && $validated['nominal'] !== null
+            ? (int) $validated['nominal']
+            : ($sisa > 0 ? $sisa : $nilai);
+
+        $tanggalBayar    = $validated['tanggal_bayar'] ?? now()->format('Y-m-d');
+        $metode          = $validated['metode_pembayaran'] ?? 'Transfer Bank BCA';
+        $catatan         = $validated['catatan'] ?? null;
+        $masukPembukuan  = $request->boolean('masuk_pembukuan', true);
+        $nomorPembayaran = DocumentNumberingService::generateNumber('pembayaran');
+
+        // 1. Catat ke Pembukuan (transactions)
+        $txId = null;
+        if ($masukPembukuan && $nominal > 0) {
+            $desc = "Pembayaran Proyek {$proyek->kode} - {$proyek->nama}";
+            if ($catatan) {
+                $desc .= " ({$catatan})";
+            }
+
+            $tx = Transaction::create([
+                'type'       => 'masuk',
+                'name'       => $desc,
+                'date'       => $tanggalBayar,
+                'category'   => 'Pembayaran Client',
+                'proyek_id'  => $proyek->kode,
+                'amount'     => $nominal,
+                'created_by' => $request->user()?->id,
+            ]);
+            $txId = $tx->id;
+        }
+
+        // 2. Catat Riwayat Pembayaran Proyek
+        $pembayaran = null;
+        if ($nominal > 0) {
+            $pembayaran = $proyek->pembayarans()->create([
+                'transaction_id'    => $txId,
+                'nomor_pembayaran'  => $nomorPembayaran,
+                'tanggal_bayar'     => $tanggalBayar,
+                'nominal'           => $nominal,
+                'metode_pembayaran' => $metode,
+                'catatan'           => $catatan,
+                'masuk_pembukuan'   => $masukPembukuan,
+                'created_by'        => $request->user()?->id,
+            ]);
+        }
+
+        // 3. Update Status Pembayaran Proyek
+        $newTotalPaid = (int) $proyek->pembayarans()->sum('nominal');
+        $statusPembayaran = $validated['status_pembayaran'] ?? null;
+        if (!$statusPembayaran) {
+            if ($nilai > 0 && $newTotalPaid >= $nilai) {
+                $statusPembayaran = 'Lunas';
+            } elseif ($newTotalPaid > 0) {
+                $statusPembayaran = 'Sebagian';
+            } else {
+                $statusPembayaran = 'Lunas';
+            }
+        }
+
+        $proyek->update(['status_pembayaran' => $statusPembayaran]);
+
+        // 4. Update status invoices jika lunas
+        if ($statusPembayaran === 'Lunas') {
+            $proyek->invoices()->where('status', '!=', 'Lunas')->update(['status' => 'Lunas']);
+        }
+
+        $proyek->load(['picUser', 'tim.user', 'penawaran', 'perpanjanganSewas.createdBy', 'pembayarans.transaction', 'pembayarans.createdBy', 'pembayarans.invoice']);
+
+        return response()->json([
+            'message'    => 'Pembayaran proyek berhasil dicatat' . ($txId ? ' dan otomatis masuk ke Pembukuan' : ''),
+            'data'       => $this->formatProyek($proyek, true),
+            'pembayaran' => $pembayaran,
+        ]);
+    }
+
+    /**
+     * PATCH /api/proyeks/{proyek}/status-pembayaran
+     */
+    public function updateStatusPembayaran(Request $request, Proyek $proyek): JsonResponse
+    {
+        abort_unless($proyek->isAccessibleBy($request->user()), 403, 'Akses ditolak');
+
+        $validated = $request->validate([
+            'status_pembayaran' => 'required|in:' . implode(',', Proyek::VALID_STATUS_PEMBAYARAN),
+        ]);
+
+        $proyek->update(['status_pembayaran' => $validated['status_pembayaran']]);
+
+        return response()->json([
+            'message' => 'Status pembayaran berhasil diperbarui',
+            'data'    => $this->formatProyek($proyek->fresh(['picUser'])),
         ]);
     }
 

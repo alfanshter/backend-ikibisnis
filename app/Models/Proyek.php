@@ -36,6 +36,7 @@ class Proyek extends Model
         'nilai',
         'progress',
         'status',
+        'status_pembayaran',
         'akses_tipe',
         'allowed_roles',
         'penawaran_id',
@@ -68,6 +69,7 @@ class Proyek extends Model
     const VALID_TIPE_KONTRAK = ['Reguler', 'Sewa'];
     const VALID_SKEMA_PEMBAYARAN = ['Bulanan', 'Sekaligus', 'Termin'];
     const VALID_STATUS_SEWA = ['Aktif', 'Mendekati Jatuh Tempo', 'Kadaluarsa', 'Selesai', 'Diperpanjang'];
+    const VALID_STATUS_PEMBAYARAN = ['Belum Dibayar', 'Sebagian', 'Lunas'];
     const VALID_AKSES_TIPE = ['personal', 'role', 'semua'];
 
     // ── Relationships ─────────────────────────────────────────────────────────
@@ -134,6 +136,11 @@ class Proyek extends Model
     public function procurements(): HasMany
     {
         return $this->hasMany(ProyekProcurement::class)->orderByDesc('tanggal_request')->orderByDesc('id');
+    }
+
+    public function pembayarans(): HasMany
+    {
+        return $this->hasMany(ProyekPembayaran::class)->orderByDesc('tanggal_bayar')->orderByDesc('id');
     }
 
     // ── Scopes ────────────────────────────────────────────────────────────────
@@ -231,5 +238,22 @@ class Proyek extends Model
     public function generateKode(): string
     {
         return \App\Services\DocumentNumberingService::generateNumber('proyek');
+    }
+
+    public function syncStatusPembayaran(): string
+    {
+        $totalPaid = (int) $this->pembayarans()->sum('nominal');
+        $nilai = (int) ($this->nilai ?? 0);
+
+        if ($nilai > 0 && $totalPaid >= $nilai) {
+            $status = 'Lunas';
+        } elseif ($totalPaid > 0) {
+            $status = 'Sebagian';
+        } else {
+            $status = 'Belum Dibayar';
+        }
+
+        $this->update(['status_pembayaran' => $status]);
+        return $status;
     }
 }

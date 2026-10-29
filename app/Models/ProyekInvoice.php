@@ -53,6 +53,11 @@ class ProyekInvoice extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function pembayarans(): HasMany
+    {
+        return $this->hasMany(ProyekPembayaran::class, 'proyek_invoice_id')->orderByDesc('tanggal_bayar')->orderByDesc('id');
+    }
+
     // ── Recalculate totals from items ─────────────────────────────────────────
     public function recalculate(): void
     {
