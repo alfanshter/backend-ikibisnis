@@ -14,7 +14,7 @@ use Illuminate\Http\Request;
 
 class ProyekPembayaranController extends Controller
 {
-    private function formatPembayaran(ProyekPembayaran $p): array
+    private function formatPembayaran(ProyekPembayaran $p, bool $maskNominal = false): array
     {
         return [
             'id'                => $p->id,
@@ -26,8 +26,8 @@ class ProyekPembayaranController extends Controller
             'bulan_ke'          => $p->bulan_ke,
             'periode_bulan'     => $p->periode_bulan,
             'tanggal_bayar'     => $p->tanggal_bayar?->format('Y-m-d'),
-            'nominal'           => $p->nominal,
-            'nominal_format'    => 'Rp ' . number_format($p->nominal, 0, ',', '.'),
+            'nominal'           => $maskNominal ? 0 : $p->nominal,
+            'nominal_format'    => $maskNominal ? '—' : ('Rp ' . number_format($p->nominal, 0, ',', '.')),
             'metode_pembayaran' => $p->metode_pembayaran,
             'catatan'           => $p->catatan,
             'bukti_bayar'       => $p->bukti_bayar,
@@ -44,13 +44,17 @@ class ProyekPembayaranController extends Controller
     {
         abort_unless($proyek->isAccessibleBy($request->user()), 403, 'Akses ditolak');
 
+        $user = $request->user();
+        $isAdmin = $user && $user->role && in_array($user->role->slug, ['super-admin', 'admin']);
+        $maskNominal = !$isAdmin && isset($proyek->tampilkan_nilai) && !$proyek->tampilkan_nilai;
+
         $pembayarans = $proyek->pembayarans()
             ->with(['invoice', 'transaction', 'createdBy'])
             ->get();
 
         return response()->json([
-            'data' => $pembayarans->map(fn($p) => $this->formatPembayaran($p))->values(),
-            'total_dibayar' => $pembayarans->sum('nominal'),
+            'data' => $pembayarans->map(fn($p) => $this->formatPembayaran($p, $maskNominal))->values(),
+            'total_dibayar' => $maskNominal ? 0 : $pembayarans->sum('nominal'),
         ]);
     }
 
@@ -61,6 +65,10 @@ class ProyekPembayaranController extends Controller
     public function sewaJadwal(Request $request, Proyek $proyek): JsonResponse
     {
         abort_unless($proyek->isAccessibleBy($request->user()), 403, 'Akses ditolak');
+
+        $user = $request->user();
+        $isAdmin = $user && $user->role && in_array($user->role->slug, ['super-admin', 'admin']);
+        $maskNominal = !$isAdmin && isset($proyek->tampilkan_nilai) && !$proyek->tampilkan_nilai;
 
         $durasi = max(1, $proyek->sewa_durasi_bulan ?? 12);
         $startDate = $proyek->sewa_mulai
@@ -98,17 +106,17 @@ class ProyekPembayaranController extends Controller
                 'periode_bulan'          => $bNama,
                 'tanggal_periode'        => $bDate->format('Y-m-d'),
                 'tanggal_jatuh_tempo'    => $jtDate->format('Y-m-d'),
-                'nominal_tagihan'        => $nominalPerBulan,
-                'nominal_tagihan_format' => 'Rp ' . number_format($nominalPerBulan, 0, ',', '.'),
+                'nominal_tagihan'        => $maskNominal ? 0 : $nominalPerBulan,
+                'nominal_tagihan_format' => $maskNominal ? '—' : ('Rp ' . number_format($nominalPerBulan, 0, ',', '.')),
                 'status'                 => $status,
                 'is_paid'                => $isPaid,
                 'is_overdue'             => $isOverdue,
-                'pembayaran'             => $pmt ? $this->formatPembayaran($pmt) : null,
+                'pembayaran'             => $pmt ? $this->formatPembayaran($pmt, $maskNominal) : null,
                 'invoice'                => $inv ? [
                     'id'            => $inv->id,
                     'nomor_invoice' => $inv->nomor_invoice,
                     'status'        => $inv->status,
-                    'total_harga'   => $inv->total_harga,
+                    'total_harga'   => $maskNominal ? 0 : $inv->total_harga,
                 ] : null,
             ];
         }
@@ -118,12 +126,12 @@ class ProyekPembayaranController extends Controller
         $bulanTerbayar = $paymentsByBulan->count();
 
         $summary = [
-            'total_nilai_kontrak'        => $totalKontrak,
-            'total_nilai_kontrak_format' => 'Rp ' . number_format($totalKontrak, 0, ',', '.'),
-            'total_sudah_dibayar'        => $totalPaid,
-            'total_sudah_dibayar_format' => 'Rp ' . number_format($totalPaid, 0, ',', '.'),
-            'sisa_tagihan'               => max(0, $totalKontrak - $totalPaid),
-            'sisa_tagihan_format'        => 'Rp ' . number_format(max(0, $totalKontrak - $totalPaid), 0, ',', '.'),
+            'total_nilai_kontrak'        => $maskNominal ? 0 : $totalKontrak,
+            'total_nilai_kontrak_format' => $maskNominal ? '— (Dirahasiakan)' : ('Rp ' . number_format($totalKontrak, 0, ',', '.')),
+            'total_sudah_dibayar'        => $maskNominal ? 0 : $totalPaid,
+            'total_sudah_dibayar_format' => $maskNominal ? '—' : ('Rp ' . number_format($totalPaid, 0, ',', '.')),
+            'sisa_tagihan'               => $maskNominal ? 0 : max(0, $totalKontrak - $totalPaid),
+            'sisa_tagihan_format'        => $maskNominal ? '—' : ('Rp ' . number_format(max(0, $totalKontrak - $totalPaid), 0, ',', '.')),
             'total_bulan'                => $durasi,
             'bulan_terbayar'             => $bulanTerbayar,
             'bulan_sisa'                 => max(0, $durasi - $bulanTerbayar),

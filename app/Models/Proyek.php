@@ -38,6 +38,7 @@ class Proyek extends Model
         'status',
         'status_pembayaran',
         'akses_tipe',
+        'tampilkan_nilai',
         'allowed_roles',
         'penawaran_id',
         'lead_id',
@@ -53,6 +54,7 @@ class Proyek extends Model
         'nominal_per_bulan' => 'integer',
         'nilai'             => 'integer',
         'progress'          => 'integer',
+        'tampilkan_nilai'   => 'boolean',
         'allowed_roles'     => 'array',
     ];
 

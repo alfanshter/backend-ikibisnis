@@ -147,4 +147,61 @@ class AccessControlTest extends TestCase
         $res = $this->actingAs($this->teknisi1)->getJson("/api/proyeks/{$p->id}");
         $res->assertOk();
     }
+
+    public function test_price_is_hidden_from_teknisi_when_tampilkan_nilai_is_false(): void
+    {
+        $p = Proyek::create([
+            'kode'            => 'PRJ-005',
+            'nama'            => 'Proyek Harga Sensitif',
+            'pic_id'          => $this->teknisi1->id,
+            'akses_tipe'      => 'personal',
+            'tampilkan_nilai' => false,
+            'nilai'           => 25000000,
+        ]);
+
+        // 1. Admin should see the real price
+        $resAdmin = $this->actingAs($this->admin)->getJson("/api/proyeks/{$p->id}");
+        $resAdmin->assertOk();
+        $this->assertEquals(25000000, $resAdmin->json('data.nilai'));
+        $this->assertEquals('Rp25.000.000', $resAdmin->json('data.nilai_format'));
+
+        // 2. Teknisi 1 (PIC) can access the project, but the price is masked
+        $resTeknisi = $this->actingAs($this->teknisi1)->getJson("/api/proyeks/{$p->id}");
+        $resTeknisi->assertOk();
+        $this->assertEquals(0, $resTeknisi->json('data.nilai'));
+        $this->assertEquals('— (Dirahasiakan)', $resTeknisi->json('data.nilai_format'));
+
+        // 3. In index list, price is also masked for teknisi
+        $resIndex = $this->actingAs($this->teknisi1)->getJson('/api/proyeks');
+        $resIndex->assertOk();
+        $this->assertEquals(0, $resIndex->json('data.0.nilai'));
+        $this->assertEquals('— (Dirahasiakan)', $resIndex->json('data.0.nilai_format'));
+    }
+
+    public function test_admin_can_toggle_tampilkan_nilai(): void
+    {
+        $p = Proyek::create([
+            'kode'            => 'PRJ-006',
+            'nama'            => 'Proyek Fleksibel',
+            'pic_id'          => $this->teknisi1->id,
+            'akses_tipe'      => 'personal',
+            'tampilkan_nilai' => false,
+            'nilai'           => 15000000,
+        ]);
+
+        // Initially masked for teknisi
+        $resTeknisi = $this->actingAs($this->teknisi1)->getJson("/api/proyeks/{$p->id}");
+        $this->assertEquals(0, $resTeknisi->json('data.nilai'));
+
+        // Update tampilkan_nilai to true
+        $updateRes = $this->actingAs($this->admin)->putJson("/api/proyeks/{$p->id}", [
+            'tampilkan_nilai' => true,
+        ]);
+        $updateRes->assertOk();
+
+        // Now teknisi can see the price
+        $resTeknisiAfter = $this->actingAs($this->teknisi1)->getJson("/api/proyeks/{$p->id}");
+        $this->assertEquals(15000000, $resTeknisiAfter->json('data.nilai'));
+        $this->assertEquals('Rp15.000.000', $resTeknisiAfter->json('data.nilai_format'));
+    }
 }

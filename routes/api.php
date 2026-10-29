@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\LeadActivityController;
 use App\Http\Controllers\Api\SurveiController;
 use App\Http\Controllers\Api\AuditLogController;
+use App\Http\Controllers\Api\SettingController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
@@ -45,6 +46,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // ── Document Numbering ──────────────────────────────────────────────────
     Route::apiResource('document-numberings', \App\Http\Controllers\Api\DocumentNumberingController::class);
+
+    // ── System / PDF Settings ──────────────────────────────────────────────
+    Route::prefix('settings')->group(function () {
+        Route::get('/penawaran-pdf', [SettingController::class, 'getPenawaranPdf']);
+        Route::post('/penawaran-pdf', [SettingController::class, 'savePenawaranPdf']);
+        Route::post('/penawaran-pdf/upload-image', [SettingController::class, 'uploadPenawaranPdfImage']);
+        Route::delete('/penawaran-pdf/image', [SettingController::class, 'deletePenawaranPdfImage']);
+    });
 
     // ── Database Client ──────────────────────────────────────────────────────────
     Route::apiResource('clients', \App\Http\Controllers\Api\ClientController::class);

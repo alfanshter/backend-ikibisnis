@@ -13,8 +13,11 @@ class ProyekController extends Controller
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function formatProyek(Proyek $p, bool $withRelations = false): array
+    private function formatProyek(Proyek $p, bool $withRelations = false, ?\App\Models\User $currentUser = null): array
     {
+        $isAdmin = $currentUser && $currentUser->role && in_array($currentUser->role->slug, ['super-admin', 'admin']);
+        $sembunyikanNilai = !$isAdmin && isset($p->tampilkan_nilai) && !$p->tampilkan_nilai;
+
         $totalDibayar = isset($p->total_dibayar)
             ? (int) $p->total_dibayar
             : ($p->relationLoaded('pembayarans') ? (int) $p->pembayarans->sum('nominal') : (int) $p->pembayarans()->sum('nominal'));
@@ -41,16 +44,16 @@ class ProyekController extends Controller
             'divisi'        => $p->divisi,
             'tipe_kontrak'  => $p->tipe_kontrak ?? 'Reguler',
             'status_pembayaran' => $statusPembayaran,
-            'total_dibayar' => $totalDibayar,
-            'total_dibayar_format' => 'Rp' . number_format($totalDibayar, 0, ',', '.'),
-            'sisa_pembayaran' => $sisaPembayaran,
-            'sisa_pembayaran_format' => 'Rp' . number_format($sisaPembayaran, 0, ',', '.'),
+            'total_dibayar' => $sembunyikanNilai ? 0 : $totalDibayar,
+            'total_dibayar_format' => $sembunyikanNilai ? '—' : ('Rp' . number_format($totalDibayar, 0, ',', '.')),
+            'sisa_pembayaran' => $sembunyikanNilai ? 0 : $sisaPembayaran,
+            'sisa_pembayaran_format' => $sembunyikanNilai ? '—' : ('Rp' . number_format($sisaPembayaran, 0, ',', '.')),
             'sewa_mulai'    => $p->sewa_mulai?->format('Y-m-d'),
             'sewa_selesai'  => $p->sewa_selesai?->format('Y-m-d'),
             'sewa_durasi_bulan' => $p->sewa_durasi_bulan,
             'skema_pembayaran'  => $p->skema_pembayaran,
-            'nominal_per_bulan' => $p->nominal_per_bulan,
-            'nominal_per_bulan_format' => $p->nominal_per_bulan ? 'Rp' . number_format($p->nominal_per_bulan, 0, ',', '.') : null,
+            'nominal_per_bulan' => $sembunyikanNilai ? null : $p->nominal_per_bulan,
+            'nominal_per_bulan_format' => $sembunyikanNilai ? null : ($p->nominal_per_bulan ? 'Rp' . number_format($p->nominal_per_bulan, 0, ',', '.') : null),
             'status_sewa'   => $p->status_sewa ?? 'Aktif',
             'sisa_hari_sewa'=> ($p->tipe_kontrak === 'Sewa' && $p->sewa_selesai)
                 ? (int) ceil(now()->diffInDays($p->sewa_selesai, false))
@@ -58,13 +61,14 @@ class ProyekController extends Controller
             'pic_id'        => $p->pic_id,
             'pic'           => $p->picUser?->name,
             'akses_tipe'    => $p->akses_tipe ?? 'personal',
+            'tampilkan_nilai' => (bool) ($p->tampilkan_nilai ?? true),
             'allowed_roles' => $p->allowed_roles ?? [],
             'tanggal'       => $p->tanggal?->format('Y-m-d'),
             'targetSelesai' => $p->target_selesai?->format('Y-m-d'),  // camelCase for frontend
             'target_selesai'=> $p->target_selesai?->format('Y-m-d'),
             'deskripsi'     => $p->deskripsi,
-            'nilai'         => $p->nilai,
-            'nilai_format'  => 'Rp' . number_format($p->nilai, 0, ',', '.'),
+            'nilai'         => $sembunyikanNilai ? 0 : $p->nilai,
+            'nilai_format'  => $sembunyikanNilai ? '— (Dirahasiakan)' : ('Rp' . number_format($p->nilai, 0, ',', '.')),
             'progress'      => $p->progress,
             'status'        => $p->status,
             'penawaran_id'  => $p->penawaran_id,
@@ -90,8 +94,8 @@ class ProyekController extends Controller
                 'sewa_mulai_baru'      => $r->sewa_mulai_baru?->format('Y-m-d'),
                 'sewa_selesai_baru'    => $r->sewa_selesai_baru?->format('Y-m-d'),
                 'durasi_bulan'         => $r->durasi_bulan,
-                'nominal'              => $r->nominal,
-                'nominal_format'       => 'Rp' . number_format($r->nominal, 0, ',', '.'),
+                'nominal'              => $sembunyikanNilai ? 0 : $r->nominal,
+                'nominal_format'       => $sembunyikanNilai ? '—' : ('Rp' . number_format($r->nominal, 0, ',', '.')),
                 'skema_pembayaran'     => $r->skema_pembayaran,
                 'catatan'              => $r->catatan,
                 'created_by'           => $r->createdBy?->name,
@@ -105,8 +109,8 @@ class ProyekController extends Controller
                 'transaction_id'    => $pmt->transaction_id,
                 'nomor_pembayaran'  => $pmt->nomor_pembayaran,
                 'tanggal_bayar'     => $pmt->tanggal_bayar?->format('Y-m-d'),
-                'nominal'           => $pmt->nominal,
-                'nominal_format'    => 'Rp' . number_format($pmt->nominal, 0, ',', '.'),
+                'nominal'           => $sembunyikanNilai ? 0 : $pmt->nominal,
+                'nominal_format'    => $sembunyikanNilai ? '—' : ('Rp' . number_format($pmt->nominal, 0, ',', '.')),
                 'metode_pembayaran' => $pmt->metode_pembayaran,
                 'catatan'           => $pmt->catatan,
                 'bukti_bayar'       => $pmt->bukti_bayar,
@@ -137,7 +141,7 @@ class ProyekController extends Controller
         $proyeks = $query->orderByDesc('tanggal')->orderByDesc('id')->paginate(12);
 
         return response()->json([
-            'data' => $proyeks->map(fn($p) => $this->formatProyek($p))->values(),
+            'data' => $proyeks->map(fn($p) => $this->formatProyek($p, false, $request->user()))->values(),
             'meta' => [
                 'current_page' => $proyeks->currentPage(),
                 'last_page'    => $proyeks->lastPage(),
@@ -166,7 +170,14 @@ class ProyekController extends Controller
             'count'  => $counts[$s] ?? 0,
         ], Proyek::VALID_STATUSES);
 
-        $nilaiTotal = (clone $base)->whereIn('status', ['Berjalan', 'QC', 'Serah Terima'])->sum('nilai');
+        $currentUser = $request->user();
+        $isAdmin = $currentUser && $currentUser->role && in_array($currentUser->role->slug, ['super-admin', 'admin']);
+
+        $nilaiQuery = (clone $base)->whereIn('status', ['Berjalan', 'QC', 'Serah Terima']);
+        if (!$isAdmin) {
+            $nilaiQuery->where('tampilkan_nilai', true);
+        }
+        $nilaiTotal = $nilaiQuery->sum('nilai');
 
         return response()->json([
             'by_status'   => $byStatus,
@@ -200,6 +211,7 @@ class ProyekController extends Controller
             'status_sewa'       => 'nullable|in:' . implode(',', Proyek::VALID_STATUS_SEWA),
             'pic_id'            => 'nullable|exists:users,id',
             'akses_tipe'        => 'nullable|in:' . implode(',', Proyek::VALID_AKSES_TIPE),
+            'tampilkan_nilai'   => 'nullable|boolean',
             'allowed_roles'     => 'nullable|array',
             'tanggal'           => 'nullable|date',
             'target_selesai'    => 'nullable|date',
@@ -263,6 +275,7 @@ class ProyekController extends Controller
         $proyek->nilai        = $nilai;  // ensure NOT NULL on PostgreSQL
         $proyek->progress     = $validated['progress'] ?? 0;
         $proyek->akses_tipe   = $validated['akses_tipe'] ?? 'personal';
+        $proyek->tampilkan_nilai = $validated['tampilkan_nilai'] ?? true;
         $proyek->allowed_roles = $validated['allowed_roles'] ?? null;
         $proyek->created_by   = $request->user()?->id;
         $proyek->save();
@@ -284,7 +297,7 @@ class ProyekController extends Controller
 
         return response()->json([
             'message' => 'Proyek berhasil ditambahkan',
-            'data'    => $this->formatProyek($proyek),
+            'data'    => $this->formatProyek($proyek, false, $request->user()),
         ], 201);
     }
 
@@ -302,7 +315,7 @@ class ProyekController extends Controller
         $proyek->load(['picUser', 'tim.user', 'penawaran', 'perpanjanganSewas.createdBy', 'pembayarans.transaction', 'pembayarans.createdBy', 'pembayarans.invoice']);
 
         return response()->json([
-            'data' => $this->formatProyek($proyek, true),
+            'data' => $this->formatProyek($proyek, true, $request->user()),
         ]);
     }
 
@@ -334,6 +347,7 @@ class ProyekController extends Controller
             'status_sewa'       => 'nullable|in:' . implode(',', Proyek::VALID_STATUS_SEWA),
             'pic_id'            => 'nullable|exists:users,id',
             'akses_tipe'        => 'nullable|in:' . implode(',', Proyek::VALID_AKSES_TIPE),
+            'tampilkan_nilai'   => 'nullable|boolean',
             'allowed_roles'     => 'nullable|array',
             'tanggal'           => 'nullable|date',
             'target_selesai'    => 'nullable|date',
@@ -358,7 +372,7 @@ class ProyekController extends Controller
 
         return response()->json([
             'message' => 'Proyek berhasil diperbarui',
-            'data'    => $this->formatProyek($proyek->fresh(['picUser', 'perpanjanganSewas.createdBy'])),
+            'data'    => $this->formatProyek($proyek->fresh(['picUser', 'perpanjanganSewas.createdBy']), false, $request->user()),
         ]);
     }
 
