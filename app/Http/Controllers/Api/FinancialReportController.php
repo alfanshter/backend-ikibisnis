@@ -97,8 +97,8 @@ class FinancialReportController extends Controller
         $trend = [];
         for ($i = 5; $i >= 0; $i--) {
             $d = $targetDate->copy()->subMonthsNoOverflow($i);
-            $masuk  = Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->masuk()->sum('amount');
-            $keluar = Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->keluar()->sum('amount');
+            $masuk  = (float) (Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->masuk()->sum('amount') ?? 0);
+            $keluar = (float) (Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->keluar()->sum('amount') ?? 0);
             $net    = $masuk - $keluar;
             $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
             $trend[] = [
@@ -231,8 +231,8 @@ class FinancialReportController extends Controller
         $trend = [];
         for ($i = 5; $i >= 0; $i--) {
             $d      = $targetDate->copy()->subMonthsNoOverflow($i);
-            $masuk  = Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->masuk()->sum('amount');
-            $keluar = Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->keluar()->sum('amount');
+            $masuk  = (float) (Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->masuk()->sum('amount') ?? 0);
+            $keluar = (float) (Transaction::whereMonth('date', $d->month)->whereYear('date', $d->year)->keluar()->sum('amount') ?? 0);
             $net    = $masuk - $keluar;
             $laba   = $net > 0 ? round($net * 0.89) : $net; // rough approximation after tax
             $monthNames = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];

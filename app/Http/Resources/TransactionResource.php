@@ -21,7 +21,7 @@ class TransactionResource extends JsonResource
             'date' => $this->date ? $this->date->format('Y-m-d') : null,
             'category' => $this->category,
             'proyekId' => $this->proyek_id, // camelCase for frontend
-            'amount' => $this->amount,
+            'amount' => (float) $this->amount,
             'created_by' => $this->created_by,
             'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
         ];

@@ -57,15 +57,15 @@ class TransactionController extends Controller
         $currentMonth = $request->input('month', Carbon::now()->month);
         $currentYear = $request->input('year', Carbon::now()->year);
 
-        $totalMasuk = Transaction::whereMonth('date', $currentMonth)
+        $totalMasuk = (float) (Transaction::whereMonth('date', $currentMonth)
                                  ->whereYear('date', $currentYear)
                                  ->masuk()
-                                 ->sum('amount');
+                                 ->sum('amount') ?? 0);
 
-        $totalKeluar = Transaction::whereMonth('date', $currentMonth)
+        $totalKeluar = (float) (Transaction::whereMonth('date', $currentMonth)
                                   ->whereYear('date', $currentYear)
                                   ->keluar()
-                                  ->sum('amount');
+                                  ->sum('amount') ?? 0);
 
         $saldoBersih = $totalMasuk - $totalKeluar;
 
@@ -74,15 +74,15 @@ class TransactionController extends Controller
         for ($i = 5; $i >= 0; $i--) {
             $targetDate = Carbon::createFromDate($currentYear, $currentMonth, 1)->subMonthsNoOverflow($i);
             
-            $masuk = Transaction::whereMonth('date', $targetDate->month)
+            $masuk = (float) (Transaction::whereMonth('date', $targetDate->month)
                                 ->whereYear('date', $targetDate->year)
                                 ->masuk()
-                                ->sum('amount');
+                                ->sum('amount') ?? 0);
                                 
-            $keluar = Transaction::whereMonth('date', $targetDate->month)
+            $keluar = (float) (Transaction::whereMonth('date', $targetDate->month)
                                  ->whereYear('date', $targetDate->year)
                                  ->keluar()
-                                 ->sum('amount');
+                                 ->sum('amount') ?? 0);
 
             // Format month name (e.g., 'Jan', 'Feb')
             $monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
