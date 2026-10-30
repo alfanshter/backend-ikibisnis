@@ -99,10 +99,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/tim/{tim}', [\App\Http\Controllers\Api\ProyekTimController::class, 'destroy']);
 
         // Log Pekerjaan
-        Route::get('/log-pekerjaan',           [\App\Http\Controllers\Api\LogPekerjaanController::class, 'index']);
-        Route::post('/log-pekerjaan',          [\App\Http\Controllers\Api\LogPekerjaanController::class, 'store']);
-        Route::put('/log-pekerjaan/{log}',     [\App\Http\Controllers\Api\LogPekerjaanController::class, 'update']);
-        Route::delete('/log-pekerjaan/{log}',  [\App\Http\Controllers\Api\LogPekerjaanController::class, 'destroy']);
+        Route::get('/log-pekerjaan',                          [\App\Http\Controllers\Api\LogPekerjaanController::class, 'index']);
+        Route::post('/log-pekerjaan',                         [\App\Http\Controllers\Api\LogPekerjaanController::class, 'store']);
+        Route::put('/log-pekerjaan/{log}',                    [\App\Http\Controllers\Api\LogPekerjaanController::class, 'update']);
+        Route::delete('/log-pekerjaan/{log}',                 [\App\Http\Controllers\Api\LogPekerjaanController::class, 'destroy']);
+        Route::patch('/log-pekerjaan/{log}/verifikasi',       [\App\Http\Controllers\Api\LogPekerjaanController::class, 'verifikasi']);
 
         // QC
         Route::get('/qc',                  [\App\Http\Controllers\Api\ProyekQcController::class, 'show']);

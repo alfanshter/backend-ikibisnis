@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class LogPekerjaanFoto extends Model
 {
-    protected $fillable = ['log_pekerjaan_id', 'url', 'label'];
+    protected $fillable = ['log_pekerjaan_id', 'url', 'label', 'keterangan'];
 
     public function log(): BelongsTo
     {
