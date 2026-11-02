@@ -14,6 +14,10 @@ use App\Http\Controllers\Api\SettingController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
+// Gambar pengaturan PDF (kop/footer/watermark/TTD) diserve publik agar bisa dipakai
+// preview <img> dan fetch() lintas origin oleh frontend saat menyusun PDF.
+Route::get('/settings/penawaran-pdf/image/{type}', [SettingController::class, 'showPenawaranPdfImage']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);

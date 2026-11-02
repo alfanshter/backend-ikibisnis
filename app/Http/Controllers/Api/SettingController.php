@@ -7,6 +7,7 @@ use App\Models\Setting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class SettingController extends Controller
 {
@@ -123,6 +124,49 @@ class SettingController extends Controller
     }
 
     /**
+     * Streaming gambar pengaturan PDF (kop/footer/watermark/tanda tangan).
+     *
+     * Frontend mengunduh byte gambar ini saat menyusun PDF via jsPDF. Karena
+     * frontend dan API berada di domain berbeda, gambar diambil melalui API
+     * (bukan link storage mentah) agar tidak tertahan CORS dan tidak bergantung
+     * pada konfigurasi APP_URL / symlink storage.
+     */
+    public function showPenawaranPdfImage(string $type): BinaryFileResponse
+    {
+        $allowed = ['headerImage', 'footerImage', 'watermarkImage', 'signatureImage'];
+        if (!in_array($type, $allowed, true)) {
+            abort(404);
+        }
+
+        $setting = Setting::where('key', 'penawaran_pdf')->first();
+        $url = $setting?->value[$type] ?? '';
+
+        if (!is_string($url) || $url === '') {
+            abort(404, 'Gambar tidak ditemukan.');
+        }
+
+        $path = str_replace('/storage/', '', $url);
+        $disk = Storage::disk('public');
+
+        // Batasi hanya file hasil upload resmi (folder pdf_settings)
+        if (str_contains($path, '..') || !str_starts_with($path, 'pdf_settings/')) {
+            abort(404, 'Gambar tidak ditemukan.');
+        }
+
+        if (! $disk->exists($path)) {
+            abort(404, 'Gambar tidak ditemukan.');
+        }
+
+        $absolutePath = $disk->path($path);
+
+        return response()->file($absolutePath, [
+            'Content-Type' => mime_content_type($absolutePath) ?: 'image/png',
+            'Access-Control-Allow-Origin' => '*',
+            'Cache-Control' => 'public, max-age=86400',
+        ]);
+    }
+
+    /**
      * Hapus gambar tertentu dari storage
      */
     public function deletePenawaranPdfImage(Request $request): JsonResponse
@@ -155,4 +199,3 @@ class SettingController extends Controller
         ]);
     }
 }
-
