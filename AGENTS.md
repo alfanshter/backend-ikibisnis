@@ -144,6 +144,26 @@ class ProyekController extends Controller
 
 ---
 
+## 7.1 Kontrak Filter Periode Laporan
+
+Endpoint laporan keuangan (`/api/transactions`, `/api/transactions/stats`) menerima:
+
+| Parameter | Nilai | Keterangan |
+|---|---|---|
+| `period` | `month` \| `semester` \| `year` \| `custom` | Preset periode (default `month`) |
+| `month` | 1–12 | Bulan acuan (menentukan semester aktif: Jan–Jun = S1, Jul–Des = S2) |
+| `year` | tahun | Tahun acuan |
+| `start_date` / `end_date` | `YYYY-MM-DD` | Rentang kustom; bila keduanya diisi, **mengoverride preset** `period` |
+
+Respons `stats` pada `current_period` wajib memuat: `period`, `label` (Bahasa Indonesia), `start_date`, `end_date`, `total_masuk`, `total_keluar`, `saldo_bersih`.
+
+Aturan implementasi:
+- Rentang tanggal dihitung **sekali** di helper (mis. `resolvePeriod()`) lalu dipakai bersama oleh `index()` dan `stats()` — jangan duplikasi logika filter.
+- Tanggal `start_date` > `end_date` harus **otomatis ditukar**, tidak boleh menghasilkan range kosong.
+- Parameter tak dikenal (`period=abc`) → fallback aman ke `month`.
+- Bar chart `chart_data` menyesuaikan periode: `month` → 6 bulan, `semester` → 6 bulan dalam semester, `year` → 12 bulan, `custom` → agregasi per bulan dalam rentang (maks. 24 bar).
+- Label periode selalu Bahasa Indonesia (nama bulan dishort-circuit ke array lokal, **jangan** bergantung pada locale aplikasi).
+
 ## 8. Testing (PHPUnit)
 
 - Test integrasi API → `tests/Feature/`. Test unit murni → `tests/Unit/`.
